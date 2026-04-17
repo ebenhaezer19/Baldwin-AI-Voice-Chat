@@ -4,6 +4,8 @@ Berikut README yang siap Anda gunakan untuk GitHub—dirancang dengan struktur p
 
 # 🎙️ BALDWIN — Voice AI Assistant Framework
 
+<img width="1024" height="1024" alt="Baldwin" src="https://github.com/user-attachments/assets/4592cdd7-3248-489b-9825-adb085398cbd" />
+
 **Baldwin** adalah sebuah *voice-first AI assistant framework* berbasis Python yang dirancang untuk mengintegrasikan Speech-to-Text (STT), Large Language Model (LLM), dan Text-to-Speech (TTS) ke dalam satu pipeline modular yang dapat diperluas dengan berbagai tools dan intelligence layer.
 
 ---
