@@ -156,25 +156,37 @@ async def chat(request: ChatRequest):
         # Add Baldwin response to session
         baldwin_session.add_message("assistant", response_text, tool_calls)
         
-        # Generate audio response using ElevenLabs (George = male voice)
+        # Generate audio response - try ElevenLabs first, fallback to Sarvam
         audio_base64 = None
         try:
+            audio_bytes = None
+            
+            # Try ElevenLabs first if API key is configured
             if settings.elevenlabs_api_key:
-                audio_bytes = await tts_elevenlabs.synthesize_speech(
-                    response_text, 
-                    voice="george"
-                )
-            else:
-                # Fallback to Sarvam
+                try:
+                    audio_bytes = await tts_elevenlabs.synthesize_speech(
+                        response_text, 
+                        voice="george"
+                    )
+                except Exception as el_error:
+                    logger.warning(f"[API] ElevenLabs failed: {el_error}, falling back to Sarvam")
+                    audio_bytes = None
+            
+            # Fallback to Sarvam if ElevenLabs failed or no API key
+            if not audio_bytes:
                 language_code = stt.get_language_code(request.language or "english")
                 audio_bytes = await tts.synthesize_speech(response_text, language=language_code)
             
-            # Convert audio to base64
-            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-            logger.info("[API] Audio synthesis successful")
+            # Convert audio to base64 if we got audio data
+            if audio_bytes:
+                audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+                logger.info("[API] Audio synthesis successful")
+            else:
+                logger.warning("[API] No audio bytes generated")
         except Exception as e:
             logger.warning(f"[API] Audio synthesis failed: {e}")
-            # Continue without audio
+            # Continue without audio - not a fatal error
+        
         
         processing_time = (time.time() - start_time) * 1000
         

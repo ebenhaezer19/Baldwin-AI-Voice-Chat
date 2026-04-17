@@ -15,7 +15,7 @@ from utils.logger import logger
 # Voice mapping with IDs from ElevenLabs
 VOICES = {
     "george": {
-        "id": "JBFqnCBsd6RMkjVY5ZPE",  # Male voice (American accent)
+        "id": "6xPz2opT0y5qtoRh1U1Y",  # Male voice (American accent)
         "name": "George",
         "gender": "male",
         "accent": "American",
