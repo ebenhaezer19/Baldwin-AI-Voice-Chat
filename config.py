@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     
     # ============ STT & TTS ============
     sarvam_api_key: str
+    elevenlabs_api_key: str = ""
     
     # ============ Info & Berita ============
     news_api_key: str = ""
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     search_api_key: str = ""
     tmdb_api_key: str = ""
     exchangerate_api_key: str = ""
+    xai_api_key: str = ""
     
     # ============ Global Intelligence ============
     acled_api_key: str = ""

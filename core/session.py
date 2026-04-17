@@ -69,6 +69,49 @@ class SessionManager:
         
         logger.info(f"[LOG] Session: {len(self.activity_log)} interactions logged")
     
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        tool_calls: Optional[list] = None,
+    ) -> None:
+        """
+        Add a message to conversation history (flexible method).
+        
+        Args:
+            role: "user" or "assistant"
+            content: message content
+            tool_calls: optional list of tool calls (for assistant messages)
+        """
+        msg = {"role": role, "content": content}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        
+        self.history.append(msg)
+        
+        # Log activity if it's a user message
+        if role == "user":
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            summary = content[:60].replace("\n", " ")
+            entry = f"[{timestamp}] User: {summary}"
+            self.activity_log.append(entry)
+        
+        # Keep history within limits
+        self.trim_history()
+        
+        # Save to disk
+        self._save_log()
+    
+    def get_session_info(self) -> dict:
+        """Get current session information."""
+        duration_seconds = (datetime.now() - self.start_time).total_seconds()
+        return {
+            "started_at": self.start_time.isoformat(),
+            "duration_seconds": int(duration_seconds),
+            "message_count": len(self.history),
+            "activity_count": len(self.activity_log),
+        }
+    
     def get_recap(self) -> str:
         """
         Get a summary of the current session.
