@@ -65,10 +65,12 @@ async def chat(
         "temperature": temperature,
     }
     
-    # Add tools if provided
-    if tools:
-        kwargs["tools"] = tools
-        kwargs["tool_choice"] = "auto"
+    # NOTE: Groq's llama models have limited tool calling support
+    # Disable for now to maintain API stability
+    # Tools will be added back when Groq improves compatibility
+    # if tools:
+    #     kwargs["tools"] = tools
+    #     kwargs["tool_choice"] = "auto"
     
     try:
         response = await client.chat.completions.create(**kwargs)

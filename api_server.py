@@ -252,7 +252,7 @@ async def chat(request: ChatRequest):
         # Add Baldwin response to session
         baldwin_session.add_message("assistant", response_text, tool_calls)
         
-        # Generate audio response with Sarvam TTS
+        # Generate audio response with TTS (ElevenLabs primary, Sarvam fallback)
         audio_base64 = None
         audio_time = 0
         tts_start = time.time()
@@ -260,7 +260,23 @@ async def chat(request: ChatRequest):
             language_code = stt.get_language_code(request.language or "english")
             logger.info(f"[API] Starting TTS synthesis for language: {language_code}")
             
-            audio_bytes = await tts.synthesize_speech(response_text, language=language_code)
+            audio_bytes = None
+            
+            # Try ElevenLabs first (primary provider)
+            try:
+                logger.info("[API] Attempting ElevenLabs TTS...")
+                audio_bytes = await tts_elevenlabs.synthesize_speech(response_text, voice="default")
+                if audio_bytes:
+                    logger.info(f"[API] ElevenLabs TTS successful - {len(audio_bytes)} bytes")
+            except Exception as e:
+                logger.warning(f"[API] ElevenLabs TTS failed: {e}. Falling back to Sarvam...")
+            
+            # Fall back to Sarvam if ElevenLabs fails
+            if not audio_bytes:
+                logger.info("[API] Using Sarvam TTS as fallback...")
+                audio_bytes = await tts.synthesize_speech(response_text, language=language_code)
+                if audio_bytes:
+                    logger.info(f"[API] Sarvam TTS successful - {len(audio_bytes)} bytes")
             
             # Convert audio to base64 if we got audio data
             if audio_bytes:

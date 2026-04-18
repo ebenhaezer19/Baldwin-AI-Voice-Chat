@@ -14,14 +14,20 @@ from utils.logger import logger
 
 # Voice mapping with IDs from ElevenLabs
 VOICES = {
+    "default": {
+        "id": "lIHiMyas3EeVhQ0Ptz6g",  # Default voice
+        "name": "Default",
+        "gender": "neutral",
+        "accent": "neutral",
+    },
     "george": {
-        "id": "6xPz2opT0y5qtoRh1U1Y",  # Male voice (American accent)
+        "id": "6xPz2opT0y5qtoRh1U1Y",  # Male voice (American accent) - requires paid plan
         "name": "George",
         "gender": "male",
         "accent": "American",
     },
     "bella": {
-        "id": "EXAVITQu4vr4xnSDxMaL",  # Female voice (Italian accent)
+        "id": "EXAVITQu4vr4xnSDxMaL",  # Female voice (Italian accent) - requires paid plan
         "name": "Bella",
         "gender": "female",
         "accent": "Italian",
