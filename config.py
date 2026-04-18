@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # ============ Info & Berita ============
     news_api_key: str = ""
     openweather_api_key: str = ""
+    weatherapi_api_key: str = ""
     search_api_key: str = ""
     tmdb_api_key: str = ""
     exchangerate_api_key: str = ""

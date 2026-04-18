@@ -1,6 +1,6 @@
 """
-OpenWeather API Integration
-Fetch real-time weather data
+WeatherAPI.com Integration
+Fetch real-time weather data using WeatherAPI.com
 """
 import asyncio
 from typing import Optional
@@ -11,91 +11,83 @@ from utils.logger import logger
 
 async def get_weather(
     city: str = "Jakarta",
-    country_code: Optional[str] = None,
     units: str = "metric",
 ) -> dict:
     """
-    Get current weather for a city using OpenWeather API
+    Get current weather for a city using WeatherAPI.com
     
     Args:
         city: City name (e.g., "Jakarta", "New York")
-        country_code: Optional ISO 3166 country code (e.g., "ID", "US")
         units: Temperature units ("metric" for Celsius, "imperial" for Fahrenheit)
     
     Returns:
         Dict with weather information
     """
     try:
-        if not settings.openweather_api_key:
-            logger.warning("[WEATHER] OpenWeather API key not configured")
-            return {"success": False, "error": "OpenWeather API key not configured"}
+        # Get API key from config (check both weatherapi_api_key and openweather_api_key for backward compatibility)
+        api_key = getattr(settings, 'weatherapi_api_key', None) or getattr(settings, 'openweather_api_key', None)
         
-        # Build location string
-        location = f"{city},{country_code}" if country_code else city
+        if not api_key:
+            logger.warning("[WEATHER] WeatherAPI key not configured")
+            return {"success": False, "error": "WeatherAPI key not configured"}
         
-        logger.info(f"[WEATHER] Fetching weather for: {location}")
+        logger.info(f"[WEATHER] Fetching weather for: {city}")
         
-        # Get coordinates first (geocoding)
+        # WeatherAPI.com endpoint
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Geocoding endpoint
-            geo_response = await client.get(
-                "https://api.openweathermap.org/geo/1.0/direct",
+            response = await client.get(
+                "https://api.weatherapi.com/v1/current.json",
                 params={
-                    "q": location,
-                    "limit": 1,
-                    "appid": settings.openweather_api_key,
+                    "key": api_key,
+                    "q": city,
+                    "aqi": "yes",  # Include air quality data
                 }
             )
         
-        if geo_response.status_code != 200:
-            logger.error(f"[WEATHER] Geocoding error: {geo_response.text}")
-            return {"success": False, "error": "City not found"}
+        if response.status_code != 200:
+            error_data = response.json()
+            error_msg = error_data.get("error", {}).get("message", "Unknown error")
+            logger.error(f"[WEATHER] API error {response.status_code}: {error_msg}")
+            return {"success": False, "error": error_msg}
         
-        geo_data = geo_response.json()
-        if not geo_data:
-            return {"success": False, "error": f"City '{city}' not found"}
+        data = response.json()
+        location = data.get("location", {})
+        current = data.get("current", {})
         
-        lat = geo_data[0]["lat"]
-        lon = geo_data[0]["lon"]
-        city_name = geo_data[0].get("name", city)
-        country = geo_data[0].get("country", "")
-        
-        # Get weather data
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            weather_response = await client.get(
-                "https://api.openweathermap.org/data/2.5/weather",
-                params={
-                    "lat": lat,
-                    "lon": lon,
-                    "units": units,
-                    "appid": settings.openweather_api_key,
-                }
-            )
-        
-        if weather_response.status_code != 200:
-            logger.error(f"[WEATHER] Weather API error: {weather_response.text}")
-            return {"success": False, "error": "Could not fetch weather data"}
-        
-        weather = weather_response.json()
+        # Determine temperature symbol based on units
+        temp_symbol = "°C" if units == "metric" else "°F"
         
         # Extract relevant data
         result = {
             "success": True,
-            "city": city_name,
-            "country": country,
-            "temperature": weather["main"]["temp"],
-            "feels_like": weather["main"]["feels_like"],
-            "min_temp": weather["main"]["temp_min"],
-            "max_temp": weather["main"]["temp_max"],
-            "humidity": weather["main"]["humidity"],
-            "pressure": weather["main"]["pressure"],
-            "description": weather["weather"][0]["description"],
-            "wind_speed": weather["wind"]["speed"],
-            "clouds": weather["clouds"]["all"],
-            "units": "°C" if units == "metric" else "°F",
+            "city": location.get("name", city),
+            "region": location.get("region", ""),
+            "country": location.get("country", ""),
+            "temperature": current.get("temp_c") if units == "metric" else current.get("temp_f"),
+            "feels_like": current.get("feelslike_c") if units == "metric" else current.get("feelslike_f"),
+            "humidity": current.get("humidity"),
+            "condition": current.get("condition", {}).get("text", ""),
+            "wind_speed": current.get("wind_kph") if units == "metric" else current.get("wind_mph"),
+            "wind_direction": current.get("wind_dir", ""),
+            "pressure": current.get("pressure_mb"),
+            "cloud": current.get("cloud"),
+            "precipitation": current.get("precip_mm") if units == "metric" else current.get("precip_in"),
+            "visibility": current.get("vis_km") if units == "metric" else current.get("vis_miles"),
+            "uv_index": current.get("uv"),
+            "units": temp_symbol,
+            "last_updated": current.get("last_updated", ""),
         }
         
-        logger.info(f"[WEATHER] Got weather for {city_name}: {result['description']}")
+        # Add air quality if available
+        if "air_quality" in current:
+            aqi = current.get("air_quality", {})
+            result["aqi"] = {
+                "us_epa_index": aqi.get("us-epa-index"),
+                "pm2_5": aqi.get("pm2_5"),
+                "pm10": aqi.get("pm10"),
+            }
+        
+        logger.info(f"[WEATHER] Got weather for {result['city']}: {result['condition']} {result['temperature']}{temp_symbol}")
         return result
     
     except Exception as e:
@@ -108,17 +100,13 @@ WEATHER_TOOL = {
     "type": "function",
     "function": {
         "name": "get_weather",
-        "description": "Get current weather for a city. Use this when user asks about weather, temperature, or climate conditions.",
+        "description": "Get current weather for a city using WeatherAPI.com. Use this when user asks about weather, temperature, or climate conditions.",
         "parameters": {
             "type": "object",
             "properties": {
                 "city": {
                     "type": "string",
-                    "description": "City name (e.g., 'Jakarta', 'New York')",
-                },
-                "country_code": {
-                    "type": "string",
-                    "description": "ISO 3166 country code (e.g., 'ID', 'US') - optional",
+                    "description": "City name (e.g., 'Jakarta', 'New York', 'London')",
                 },
                 "units": {
                     "type": "string",
