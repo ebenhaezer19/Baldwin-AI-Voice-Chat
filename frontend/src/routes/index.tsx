@@ -164,9 +164,8 @@ function BaldwinApp() {
           setLiveTranscript(result.text);
           setConfidence(result.confidence ? Math.round(result.confidence * 100) : 95);
 
-          // Give user a moment to see the transcription
-          await new Promise((r) => setTimeout(r, 400));
-
+          // Immediately process without waiting - reduces latency
+          console.log("[AUDIO] Processing input immediately...");
           setTranscribing(false);
           processInput(result.text, result.confidence ? Math.round(result.confidence * 100) : 95);
         } else {

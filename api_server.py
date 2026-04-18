@@ -126,10 +126,13 @@ async def chat(request: ChatRequest):
         
         # Get LLM response
         logger.info(f"[API] Processing message: {user_message}")
+        llm_start = time.time()
         try:
             llm_response = await llm.chat(history)
         except Exception as llm_error:
+            llm_time = (time.time() - llm_start) * 1000
             error_str = str(llm_error)
+            logger.error(f"[API] LLM failed in {llm_time:.0f}ms: {error_str}")
             # Check for rate limit (429)
             if "429" in error_str or "rate_limit" in error_str:
                 logger.warning(f"[API] Groq rate limited: {error_str}")
@@ -150,45 +153,67 @@ async def chat(request: ChatRequest):
                 # Re-raise unknown errors
                 raise
         
+        llm_time = (time.time() - llm_start) * 1000
+        logger.info(f"[API] LLM response ready in {llm_time:.0f}ms")
+        
         response_text = llm_response.get("content", "")
         tool_calls = llm_response.get("tool_calls", [])
         
         # Add Baldwin response to session
         baldwin_session.add_message("assistant", response_text, tool_calls)
         
-        # Generate audio response - try ElevenLabs first, fallback to Sarvam
+        # Generate audio response - with timeout for faster response
         audio_base64 = None
+        audio_time = 0
+        tts_start = time.time()
         try:
             audio_bytes = None
             
-            # Try ElevenLabs first if API key is configured
+            # Try ElevenLabs first if API key is configured (with short timeout)
             if settings.elevenlabs_api_key:
                 try:
-                    audio_bytes = await tts_elevenlabs.synthesize_speech(
-                        response_text, 
-                        voice="george"
+                    # Use asyncio timeout to fail fast if ElevenLabs is slow
+                    audio_bytes = await asyncio.wait_for(
+                        tts_elevenlabs.synthesize_speech(response_text, voice="george"),
+                        timeout=3.0  # 3 second timeout for ElevenLabs
                     )
+                    logger.info("[API] ElevenLabs TTS successful")
+                except asyncio.TimeoutError:
+                    logger.warning("[API] ElevenLabs timeout (3s), using Sarvam instead")
+                    audio_bytes = None
                 except Exception as el_error:
                     logger.warning(f"[API] ElevenLabs failed: {el_error}, falling back to Sarvam")
                     audio_bytes = None
             
             # Fallback to Sarvam if ElevenLabs failed or no API key
             if not audio_bytes:
-                language_code = stt.get_language_code(request.language or "english")
-                audio_bytes = await tts.synthesize_speech(response_text, language=language_code)
+                try:
+                    language_code = stt.get_language_code(request.language or "english")
+                    audio_bytes = await asyncio.wait_for(
+                        tts.synthesize_speech(response_text, language=language_code),
+                        timeout=5.0  # 5 second timeout for Sarvam
+                    )
+                    logger.info("[API] Sarvam TTS successful")
+                except asyncio.TimeoutError:
+                    logger.warning("[API] Sarvam TTS timeout (5s), returning response without audio")
+                    audio_bytes = None
             
             # Convert audio to base64 if we got audio data
             if audio_bytes:
                 audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-                logger.info("[API] Audio synthesis successful")
+                audio_time = (time.time() - tts_start) * 1000
+                logger.info(f"[API] Audio ready in {audio_time:.0f}ms ({len(audio_bytes)} bytes)")
             else:
-                logger.warning("[API] No audio bytes generated")
+                audio_time = (time.time() - tts_start) * 1000
+                logger.warning(f"[API] No audio generated ({audio_time:.0f}ms)")
         except Exception as e:
-            logger.warning(f"[API] Audio synthesis failed: {e}")
+            audio_time = (time.time() - tts_start) * 1000
+            logger.warning(f"[API] Audio synthesis error ({audio_time:.0f}ms): {e}")
             # Continue without audio - not a fatal error
         
         
         processing_time = (time.time() - start_time) * 1000
+        logger.info(f"[API] Total response time: {processing_time:.0f}ms (LLM: {llm_time:.0f}ms, TTS: {audio_time:.0f}ms)")
         
         return ChatResponse(
             success=True,
