@@ -162,41 +162,15 @@ async def chat(request: ChatRequest):
         # Add Baldwin response to session
         baldwin_session.add_message("assistant", response_text, tool_calls)
         
-        # Generate audio response - with timeout for faster response
+        # Generate audio response with Sarvam TTS
         audio_base64 = None
         audio_time = 0
         tts_start = time.time()
         try:
-            audio_bytes = None
+            language_code = stt.get_language_code(request.language or "english")
+            logger.info(f"[API] Starting TTS synthesis for language: {language_code}")
             
-            # Try ElevenLabs first if API key is configured (with short timeout)
-            if settings.elevenlabs_api_key:
-                try:
-                    # Use asyncio timeout to fail fast if ElevenLabs is slow
-                    audio_bytes = await asyncio.wait_for(
-                        tts_elevenlabs.synthesize_speech(response_text, voice="george"),
-                        timeout=3.0  # 3 second timeout for ElevenLabs
-                    )
-                    logger.info("[API] ElevenLabs TTS successful")
-                except asyncio.TimeoutError:
-                    logger.warning("[API] ElevenLabs timeout (3s), using Sarvam instead")
-                    audio_bytes = None
-                except Exception as el_error:
-                    logger.warning(f"[API] ElevenLabs failed: {el_error}, falling back to Sarvam")
-                    audio_bytes = None
-            
-            # Fallback to Sarvam if ElevenLabs failed or no API key
-            if not audio_bytes:
-                try:
-                    language_code = stt.get_language_code(request.language or "english")
-                    audio_bytes = await asyncio.wait_for(
-                        tts.synthesize_speech(response_text, language=language_code),
-                        timeout=5.0  # 5 second timeout for Sarvam
-                    )
-                    logger.info("[API] Sarvam TTS successful")
-                except asyncio.TimeoutError:
-                    logger.warning("[API] Sarvam TTS timeout (5s), returning response without audio")
-                    audio_bytes = None
+            audio_bytes = await tts.synthesize_speech(response_text, language=language_code)
             
             # Convert audio to base64 if we got audio data
             if audio_bytes:
@@ -205,10 +179,10 @@ async def chat(request: ChatRequest):
                 logger.info(f"[API] Audio ready in {audio_time:.0f}ms ({len(audio_bytes)} bytes)")
             else:
                 audio_time = (time.time() - tts_start) * 1000
-                logger.warning(f"[API] No audio generated ({audio_time:.0f}ms)")
+                logger.warning(f"[API] No audio bytes generated ({audio_time:.0f}ms)")
         except Exception as e:
             audio_time = (time.time() - tts_start) * 1000
-            logger.warning(f"[API] Audio synthesis error ({audio_time:.0f}ms): {e}")
+            logger.warning(f"[API] TTS synthesis error ({audio_time:.0f}ms): {e}")
             # Continue without audio - not a fatal error
         
         
