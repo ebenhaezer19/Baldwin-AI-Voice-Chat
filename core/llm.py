@@ -8,6 +8,8 @@ from groq import AsyncGroq
 from config import settings
 from utils.logger import logger
 
+# Import tools
+from tools import AVAILABLE_TOOLS
 
 # Initialize Groq client
 client = AsyncGroq(api_key=settings.groq_api_key)
@@ -30,24 +32,30 @@ async def chat(
     model: str = "llama-3.3-70b-versatile",
     max_tokens: int = 1024,
     temperature: float = 0.7,
+    use_default_tools: bool = True,
 ) -> dict[str, Any]:
     """
     Send conversation to Groq LLM and get response.
     
     Args:
         messages: conversation history (list of {'role': 'user'|'assistant', 'content': '...'})
-        tools: optional list of tools for function calling
+        tools: optional list of tools for function calling (uses AVAILABLE_TOOLS by default)
         model: LLM model to use
         max_tokens: max tokens in response
         temperature: creativity level (0-1)
+        use_default_tools: whether to use default tools (news, weather, etc.)
     
     Returns:
-        Response message dict with 'role' and 'content'
+        Response dict with 'role', 'content', and optional 'tool_calls'
     
     Raises:
         Exception: if API call fails
     """
     logger.info(f"[LLM] Sending {len(messages)} messages to Groq")
+    
+    # Use default tools if not provided
+    if use_default_tools and not tools:
+        tools = AVAILABLE_TOOLS
     
     # Prepare request kwargs
     kwargs = {
@@ -66,11 +74,28 @@ async def chat(
         response = await client.chat.completions.create(**kwargs)
         
         message = response.choices[0].message
-        logger.info(f"[LLM] Response: '{message.content[:100]}...'")
+        content = message.content or ""
+        logger.info(f"[LLM] Response: '{content[:100]}...'")
+        
+        # Check for tool calls
+        tool_calls = None
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            tool_calls = []
+            for tool_call in message.tool_calls:
+                tool_calls.append({
+                    "id": tool_call.id,
+                    "type": tool_call.type,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    }
+                })
+            logger.info(f"[LLM] Tool calls detected: {[tc['function']['name'] for tc in tool_calls]}")
         
         return {
             "role": message.role or "assistant",
-            "content": message.content or "",
+            "content": content,
+            "tool_calls": tool_calls,
         }
     
     except Exception as e:

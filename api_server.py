@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from config import settings
 from core import stt, tts, tts_elevenlabs, llm, session
+from tools import TOOL_FUNCTIONS
 from utils.logger import logger
 
 
@@ -158,6 +159,71 @@ async def chat(request: ChatRequest):
         
         response_text = llm_response.get("content", "")
         tool_calls = llm_response.get("tool_calls", [])
+        
+        # Handle tool calls if LLM made any
+        if tool_calls:
+            logger.info(f"[API] Executing {len(tool_calls)} tool calls")
+            tool_results = []
+            
+            for tool_call in tool_calls:
+                tool_name = tool_call.get("function", {}).get("name")
+                tool_args = tool_call.get("function", {}).get("arguments")
+                
+                if not tool_name or tool_name not in TOOL_FUNCTIONS:
+                    logger.warning(f"[API] Unknown tool: {tool_name}")
+                    continue
+                
+                try:
+                    logger.info(f"[API] Calling tool: {tool_name} with args: {tool_args}")
+                    
+                    # Parse arguments if they're JSON string
+                    if isinstance(tool_args, str):
+                        import json
+                        tool_args = json.loads(tool_args)
+                    
+                    # Execute the tool
+                    tool_func = TOOL_FUNCTIONS[tool_name]
+                    tool_result = await tool_func(**tool_args)
+                    
+                    tool_results.append({
+                        "tool_call_id": tool_call.get("id"),
+                        "tool_name": tool_name,
+                        "result": tool_result,
+                    })
+                    
+                    logger.info(f"[API] Tool {tool_name} result: {str(tool_result)[:200]}")
+                
+                except Exception as tool_error:
+                    logger.error(f"[API] Tool execution error ({tool_name}): {tool_error}")
+                    tool_results.append({
+                        "tool_call_id": tool_call.get("id"),
+                        "tool_name": tool_name,
+                        "error": str(tool_error),
+                    })
+            
+            # If we have tool results, send them back to LLM for a follow-up response
+            if tool_results:
+                # Add assistant response to history
+                history.append({"role": "assistant", "content": response_text, "tool_calls": tool_calls})
+                
+                # Add tool results to history
+                for result in tool_results:
+                    history.append({
+                        "role": "user",
+                        "content": f"Tool {result['tool_name']} returned: {json.dumps(result.get('result', result.get('error')))}"
+                    })
+                
+                # Get follow-up response from LLM with tool results
+                logger.info("[API] Getting follow-up response from LLM with tool results")
+                llm_followup_start = time.time()
+                try:
+                    llm_followup = await llm.chat(history, use_default_tools=False)
+                    response_text = llm_followup.get("content", response_text)
+                    tool_calls = []  # Clear tool calls for final response
+                except Exception as followup_error:
+                    logger.error(f"[API] LLM follow-up failed: {followup_error}")
+                    # Use original response if follow-up fails
+                    pass
         
         # Add Baldwin response to session
         baldwin_session.add_message("assistant", response_text, tool_calls)
