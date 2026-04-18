@@ -65,14 +65,20 @@ export function Recorder({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={onToggle}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggle();
+            }}
             disabled={transcribing}
             aria-label={recording ? "Stop recording" : "Start recording"}
             className={cn(
-              "relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 text-primary-foreground transition-all cursor-pointer",
+              "relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 text-primary-foreground transition-all",
+              transcribing && "opacity-50 cursor-not-allowed",
+              !transcribing && "cursor-pointer",
               recording
-                ? "animate-pulse-ring border-destructive bg-destructive"
-                : "neon-glow border-primary bg-primary hover:scale-105",
+                ? "animate-pulse-ring border-destructive bg-destructive hover:scale-105"
+                : "neon-glow border-primary bg-primary hover:scale-105 active:scale-95",
             )}
           >
             {transcribing ? (
