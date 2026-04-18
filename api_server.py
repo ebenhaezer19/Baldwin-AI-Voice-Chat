@@ -58,6 +58,7 @@ class ChatResponse(BaseModel):
     content: str
     audio_url: Optional[str] = None
     tool_calls: Optional[list] = None
+    tool_results: Optional[list] = None
     processing_time_ms: Optional[float] = None
     error: Optional[str] = None
 
@@ -159,11 +160,13 @@ async def chat(request: ChatRequest):
         
         response_text = llm_response.get("content", "")
         tool_calls = llm_response.get("tool_calls", [])
+        formatted_tool_results = []  # Initialize for all cases
         
         # Handle tool calls if LLM made any
         if tool_calls:
             logger.info(f"[API] Executing {len(tool_calls)} tool calls")
             tool_results = []
+            formatted_tool_results = []
             
             for tool_call in tool_calls:
                 tool_name = tool_call.get("function", {}).get("name")
@@ -191,6 +194,22 @@ async def chat(request: ChatRequest):
                         "result": tool_result,
                     })
                     
+                    # Format result for frontend (include articles if news tool)
+                    formatted_result = {
+                        "tool_name": tool_name,
+                        "success": tool_result.get("success", False),
+                    }
+                    
+                    if tool_name == "news" and tool_result.get("success"):
+                        # Include articles for news tool
+                        formatted_result["articles"] = tool_result.get("articles", [])
+                        formatted_result["total_results"] = tool_result.get("total_results", 0)
+                        formatted_result["query"] = tool_result.get("query", "")
+                    elif tool_name == "weather" and tool_result.get("success"):
+                        # Include weather data
+                        formatted_result["data"] = tool_result
+                    
+                    formatted_tool_results.append(formatted_result)
                     logger.info(f"[API] Tool {tool_name} result: {str(tool_result)[:200]}")
                 
                 except Exception as tool_error:
@@ -198,6 +217,11 @@ async def chat(request: ChatRequest):
                     tool_results.append({
                         "tool_call_id": tool_call.get("id"),
                         "tool_name": tool_name,
+                        "error": str(tool_error),
+                    })
+                    formatted_tool_results.append({
+                        "tool_name": tool_name,
+                        "success": False,
                         "error": str(tool_error),
                     })
             
@@ -260,6 +284,7 @@ async def chat(request: ChatRequest):
             content=response_text,
             audio_url=f"data:audio/mpeg;base64,{audio_base64}" if audio_base64 else None,
             tool_calls=tool_calls,
+            tool_results=formatted_tool_results if formatted_tool_results else None,
             processing_time_ms=processing_time,
         )
     

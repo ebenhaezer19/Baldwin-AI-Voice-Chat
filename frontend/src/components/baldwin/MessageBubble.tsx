@@ -3,6 +3,7 @@ import { Bot, User, Copy, Check, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./types";
 import { ToolBadge } from "./ToolBadge";
+import { NewsArticles } from "./NewsArticles";
 
 function renderMarkdown(text: string) {
   // Minimal bold/italic/code support
@@ -67,6 +68,25 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           )}
         >
           <div className="whitespace-pre-wrap break-words">{renderMarkdown(message.content)}</div>
+
+          {message.toolResults && message.toolResults.length > 0 && (
+            <div className="mt-2.5 space-y-2">
+              {message.toolResults.map((result, i) => {
+                if (result.tool_name === "news" && result.articles) {
+                  return (
+                    <div key={i} className="rounded-lg border border-border bg-background/70 p-2.5">
+                      <NewsArticles
+                        articles={result.articles}
+                        totalResults={result.total_results}
+                        query={result.query}
+                      />
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
 
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className="mt-2.5 space-y-1.5">

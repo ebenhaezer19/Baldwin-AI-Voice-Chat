@@ -224,6 +224,7 @@ function BaldwinApp() {
           timestamp: new Date(),
           responseMs: response.processing_time_ms || Math.round(performance.now() - start),
           toolCalls,
+          toolResults: response.tool_results,
           audioDurationSec: 3 + Math.random() * 4,
         };
 
