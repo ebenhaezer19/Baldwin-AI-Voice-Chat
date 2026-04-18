@@ -65,12 +65,10 @@ async def chat(
         "temperature": temperature,
     }
     
-    # NOTE: Groq's llama models have limited tool calling support
-    # Disable for now to maintain API stability
-    # Tools will be added back when Groq improves compatibility
-    # if tools:
-    #     kwargs["tools"] = tools
-    #     kwargs["tool_choice"] = "auto"
+    # Enable tool calling for available tools
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
     
     try:
         response = await client.chat.completions.create(**kwargs)
@@ -101,8 +99,63 @@ async def chat(
         }
     
     except Exception as e:
-        logger.error(f"[LLM ERROR] {e}")
-        raise
+        error_str = str(e)
+        # Handle Groq tool_use_failed error by retrying without problematic tools
+        if "tool_use_failed" in error_str and tools and len(tools) > 1:
+            logger.warning(f"[LLM] Tool call failed, retrying with fewer tools: {error_str[:100]}")
+            # Retry with only weather tool (most reliable)
+            weather_tools = [t for t in tools if t.get("function", {}).get("name") == "get_weather"]
+            if weather_tools:
+                kwargs["tools"] = weather_tools
+                try:
+                    response = await client.chat.completions.create(**kwargs)
+                    message = response.choices[0].message
+                    content = message.content or ""
+                    
+                    tool_calls = None
+                    if hasattr(message, 'tool_calls') and message.tool_calls:
+                        tool_calls = []
+                        for tool_call in message.tool_calls:
+                            tool_calls.append({
+                                "id": tool_call.id,
+                                "type": tool_call.type,
+                                "function": {
+                                    "name": tool_call.function.name,
+                                    "arguments": tool_call.function.arguments,
+                                }
+                            })
+                    
+                    return {
+                        "role": message.role or "assistant",
+                        "content": content,
+                        "tool_calls": tool_calls,
+                    }
+                except Exception as retry_error:
+                    logger.error(f"[LLM] Retry also failed: {retry_error}")
+                    # Fall back to no tools
+                    kwargs.pop("tools", None)
+                    kwargs.pop("tool_choice", None)
+                    response = await client.chat.completions.create(**kwargs)
+                    message = response.choices[0].message
+                    return {
+                        "role": message.role or "assistant",
+                        "content": message.content or "",
+                        "tool_calls": None,
+                    }
+            else:
+                # No tools available, just get response without tools
+                kwargs.pop("tools", None)
+                kwargs.pop("tool_choice", None)
+                response = await client.chat.completions.create(**kwargs)
+                message = response.choices[0].message
+                return {
+                    "role": message.role or "assistant",
+                    "content": message.content or "",
+                    "tool_calls": None,
+                }
+        else:
+            logger.error(f"[LLM ERROR] {e}")
+            raise
 
 
 async def simple_response(user_input: str, history: Optional[list[dict[str, str]]] = None) -> str:
